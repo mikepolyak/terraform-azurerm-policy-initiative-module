@@ -1,0 +1,35 @@
+{
+    "properties": {
+      "displayName": "Allowed locations for resource deployment",
+      "policyType": "Custom",
+      "mode": "All",
+      "description": "Specifies the allowed locations where resources can be deployed.",
+      "metadata": {
+        "version": "1.0.0",
+        "category": "Compute"
+      },
+      "parameters": {
+        "allowedLocations": {
+          "type": "Array",
+          "metadata": {
+            "displayName": "Allowed locations",
+            "description": "List of allowed Azure regions",
+            "strongType": "location"
+          }
+        }
+      },
+      "policyRule": {
+        "if": {
+          "allOf": [
+            {
+              "field": "location",
+              "notIn": "[parameters('allowedLocations')]"
+            }
+          ]
+        },
+        "then": {
+          "effect": "${effect}"
+        }
+      }
+    }
+  }

@@ -1,0 +1,31 @@
+name: "governance-initiative"
+display_name: "Core Governance Initiative"
+description: "Implements core governance controls for resource management"
+policies:
+  RequiredTags:
+    type: "Custom"
+    file: "../policies/tags/required_tags.json"
+    default:
+      parameters:
+        requiredTags:
+          value:
+            - "Environment"
+            - "CostCenter"
+            - "Owner"
+      effect: "audit"
+    prod:
+      parameters:
+        requiredTags:
+          value:
+            - "Environment"
+            - "CostCenter"
+            - "Owner"
+            - "DataClassification"
+      effect: "deny"
+  ResourceNaming:
+    type: "BuiltIn"
+    id: "1e30110a-5ceb-460c-a204-c1c3969c6d62"
+    default:
+      parameters:
+        namePattern:
+          value: "^[a-z]-[a-z]{2,3}-[a-z]{3,10}-[0-9]{3}$"

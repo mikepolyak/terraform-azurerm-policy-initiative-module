@@ -1,0 +1,45 @@
+{
+  "assignments": [
+    {
+      "name": "security-baseline-dev",
+      "initiative": "initiatives/security/security-baseline.yml",
+      "environment": "dev",
+      "targets": [
+        {
+          "scope_type": "sub",
+          "subscription_id": "00000000-0000-0000-0000-000000000000"
+        }
+      ]
+    },
+    {
+      "name": "security-baseline-prod",
+      "initiative": "initiatives/security/security-baseline.yml",
+      "environment": "prod",
+      "targets": [
+        {
+          "scope_type": "mg",
+          "management_group_id": "mg-production"
+        }
+      ]
+    },
+    {
+      "name": "governance-dev",
+      "initiative": "initiatives/governance/governance.yml",
+      "environment": "dev",
+      "targets": [
+        {
+          "scope_type": "rg",
+          "subscription_id": "00000000-0000-0000-0000-000000000000",
+          "resource_group_name": "rg-application-dev"
+        }
+      ],
+      "exemptions": [
+        {
+          "name": "legacy-app",
+          "category": "Waiver",
+          "risk_id": "R-001"
+        }
+      ]
+    }
+  ]
+}

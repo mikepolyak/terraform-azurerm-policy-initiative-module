@@ -1,0 +1,30 @@
+{
+    "properties": {
+      "displayName": "Storage encryption should be enabled",
+      "policyType": "Custom",
+      "mode": "Indexed",
+      "description": "Ensures that encryption is enabled for Azure Storage accounts.",
+      "metadata": {
+        "version": "1.0.0",
+        "category": "Storage"
+      },
+      "parameters": {},
+      "policyRule": {
+        "if": {
+          "allOf": [
+            {
+              "field": "type",
+              "equals": "Microsoft.Storage/storageAccounts"
+            },
+            {
+              "field": "Microsoft.Storage/storageAccounts/enableHttpsTrafficOnly",
+              "notEquals": "true"
+            }
+          ]
+        },
+        "then": {
+          "effect": "${effect}"
+        }
+      }
+    }
+  }

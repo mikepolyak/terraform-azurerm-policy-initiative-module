@@ -1,0 +1,38 @@
+{
+    "properties": {
+      "displayName": "Require specified tags on resources",
+      "policyType": "Custom",
+      "mode": "Indexed",
+      "description": "Ensures that specified tags are present on all resources.",
+      "metadata": {
+        "version": "1.0.0",
+        "category": "Tags"
+      },
+      "parameters": {
+        "requiredTags": {
+          "type": "Array",
+          "metadata": {
+            "displayName": "Required tags",
+            "description": "List of required tag names"
+          }
+        }
+      },
+      "policyRule": {
+        "if": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "field": "[concat('tags[', parameters('requiredTags')[*], ']')]",
+                  "exists": "false"
+                }
+              ]
+            }
+          ]
+        },
+        "then": {
+          "effect": "${effect}"
+        }
+      }
+    }
+  }
