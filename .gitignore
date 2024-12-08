@@ -28,3 +28,6 @@ terraform.rc
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Misc
+combined.txt
