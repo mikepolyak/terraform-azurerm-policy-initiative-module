@@ -15,24 +15,51 @@
             "displayName": "Required tags",
             "description": "List of required tag names"
           }
+        },
+        "effect": {
+          "type": "String",
+          "allowedValues": [
+            "Audit",
+            "Deny",
+            "Append"
+          ],
+          "defaultValue": "Audit",
+          "metadata": {
+            "displayName": "Effect",
+            "description": "The effect to enforce for this policy."
+          }
         }
       },
       "policyRule": {
         "if": {
-          "anyOf": [
+          "allOf": [
             {
-              "allOf": [
+              "not": {
+                "field": "tags",
+                "exists": "true"
+              }
+            },
+            {
+              "anyOf": [
                 {
-                  "field": "[concat('tags[', parameters('requiredTags')[*], ']')]",
-                  "exists": "false"
+                  "not": {
+                    "field": "tags",
+                    "containsKey": "[parameters('requiredTags')[0]]"
+                  }
+                },
+                {
+                  "not": {
+                    "field": "tags",
+                    "containsKey": "[parameters('requiredTags')[1]]"
+                  }
                 }
               ]
             }
           ]
         },
         "then": {
-          "effect": "${effect}"
+          "effect": "[parameters('effect')]"
         }
       }
     }
-  }
+  }  

@@ -1,3 +1,28 @@
+terraform {
+  required_providers {
+    azurerm = {
+      source                = "hashicorp/azurerm"
+      version               = ">= 3.0.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0.0"
+    }
+  }
+  required_version = ">= 1.0.0"
+}
+
+provider "azurerm" {
+  features {}
+  subscription_id = "a9d881ca-f5c0-42cc-9670-946ef3155dfa" # Default subscription
+}
+
+provider "azurerm" {
+  alias = "target"
+  features {}
+  subscription_id = "a9d881ca-f5c0-42cc-9670-946ef3155dfa" # Target subscription
+}
+
 # Random UUIDs for resource naming
 resource "random_uuid" "policy" {
   for_each = {
@@ -28,7 +53,7 @@ resource "azurerm_policy_definition" "custom" {
       mode         = "Indexed"
       display_name = "Storage encryption should be enabled"
       description  = "Ensures that encryption is enabled for Azure Storage accounts."
-      policy_rule  = file("../../../policies/storage/encryption_required.json")
+      policy_file  = "../../../policies/storage/encryption_required.json"
       effect       = "audit"
     }
     "security-baseline-prod-StorageEncryption" = {
@@ -37,7 +62,7 @@ resource "azurerm_policy_definition" "custom" {
       mode         = "Indexed"
       display_name = "Storage encryption should be enabled"
       description  = "Ensures that encryption is enabled for Azure Storage accounts."
-      policy_rule  = file("../../../policies/storage/encryption_required.json")
+      policy_file  = "../../../policies/storage/encryption_required.json"
       effect       = "deny"
     }
     "security-baseline-dev-AllowedLocations" = {
@@ -46,7 +71,7 @@ resource "azurerm_policy_definition" "custom" {
       mode         = "All"
       display_name = "Allowed locations for resource deployment"
       description  = "Specifies the allowed locations where resources can be deployed."
-      policy_rule  = file("../../../policies/compute/allowed_locations.json")
+      policy_file  = "../../../policies/compute/allowed_locations.json"
       effect       = "audit"
     }
     "security-baseline-prod-AllowedLocations" = {
@@ -55,7 +80,7 @@ resource "azurerm_policy_definition" "custom" {
       mode         = "All"
       display_name = "Allowed locations for resource deployment"
       description  = "Specifies the allowed locations where resources can be deployed."
-      policy_rule  = file("../../../policies/compute/allowed_locations.json")
+      policy_file  = "../../../policies/compute/allowed_locations.json"
       effect       = "deny"
     }
     "governance-dev-RequiredTags" = {
@@ -64,7 +89,7 @@ resource "azurerm_policy_definition" "custom" {
       mode         = "Indexed"
       display_name = "Require specified tags on resources"
       description  = "Ensures that specified tags are present on all resources."
-      policy_rule  = file("../../../policies/tags/required_tags.json")
+      policy_file  = "../../../policies/tags/required_tags.json"
       effect       = "audit"
     }
   }
@@ -74,17 +99,52 @@ resource "azurerm_policy_definition" "custom" {
   mode         = each.value.mode
   display_name = each.value.display_name
   description  = each.value.description
-  policy_rule  = each.value.policy_rule
+  
+  # Load and parse the policy file, then encode back to JSON string
+  policy_rule = jsonencode(
+    jsondecode(
+      templatefile(
+        each.value.policy_file,
+        {
+          effect = each.value.effect
+        }
+      )
+    ).properties.policyRule
+  )
+
+  # Handle parameters
+  parameters = jsonencode(
+    jsondecode(
+      templatefile(
+        each.value.policy_file,
+        {
+          effect = each.value.effect
+        }
+      )
+    ).properties.parameters
+  )
+
+  # Handle metadata
+  metadata = jsonencode(
+    jsondecode(
+      templatefile(
+        each.value.policy_file,
+        {
+          effect = each.value.effect
+        }
+      )
+    ).properties.metadata
+  )
 }
 
 # Built-in Policy References
 data "azurerm_policy_definition" "builtin" {
   for_each = {
     "governance-dev-ResourceNaming" = {
-      display_name = "1e30110a-5ceb-460c-a204-c1c3969c6d62"
+      display_name = "Not allowed resource types"
     }
     "security-baseline-LogAnalytics" = {
-      display_name = "a70ca396-0a34-413a-88e1-0e32778d9286"
+      display_name = "Do not allow deletion of resource types"
     }
   }
 
@@ -141,7 +201,7 @@ resource "azurerm_subscription_policy_assignment" "this" {
   for_each = {
     "security-baseline-dev" = {
       name            = random_uuid.assignment["security-baseline-dev-00000000-0000-0000-0000-000000000000"].result
-      subscription_id = "00000000-0000-0000-0000-000000000000"
+      subscription_id = "/subscriptions/a9d881ca-f5c0-42cc-9670-946ef3155dfa"
     }
   }
 
@@ -154,7 +214,7 @@ resource "azurerm_management_group_policy_assignment" "this" {
   for_each = {
     "security-baseline-prod" = {
       name                = random_uuid.assignment["security-baseline-prod-mg-production"].result
-      management_group_id = "mg-production"
+      management_group_id = "/providers/Microsoft.Management/managementGroups/af41982c-6ffd-463f-ba4f-f6753a8daab4"
     }
   }
 
@@ -167,7 +227,7 @@ resource "azurerm_resource_group_policy_assignment" "this" {
   for_each = {
     "governance-dev" = {
       name              = random_uuid.assignment["governance-dev-rg-application-dev"].result
-      resource_group_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-application-dev"
+      resource_group_id = "/subscriptions/a9d881ca-f5c0-42cc-9670-946ef3155dfa/resourceGroups/rg-application-dev"
     }
   }
 
@@ -181,7 +241,7 @@ resource "azurerm_resource_group_policy_exemption" "this" {
   for_each = {
     "governance-dev-legacy-app" = {
       name              = "${random_uuid.exemptions[0].result}-legacy-app"
-      resource_group_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-application-dev"
+      resource_group_id = "/subscriptions/a9d881ca-f5c0-42cc-9670-946ef3155dfa/resourceGroups/rg-application-dev"
       category          = "Waiver"
       risk_id           = "R-001"
     }

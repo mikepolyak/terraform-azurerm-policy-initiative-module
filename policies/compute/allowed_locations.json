@@ -1,35 +1,29 @@
 {
     "properties": {
-      "displayName": "Allowed locations for resource deployment",
+      "displayName": "Enforce allowed locations",
       "policyType": "Custom",
-      "mode": "All",
-      "description": "Specifies the allowed locations where resources can be deployed.",
-      "metadata": {
-        "version": "1.0.0",
-        "category": "Compute"
-      },
+      "mode": "Indexed",
+      "description": "Ensures resources are created only in the specified allowed locations.",
       "parameters": {
         "allowedLocations": {
           "type": "Array",
           "metadata": {
-            "displayName": "Allowed locations",
-            "description": "List of allowed Azure regions",
-            "strongType": "location"
+            "displayName": "Allowed Locations",
+            "description": "The list of allowed locations for resources."
           }
         }
       },
       "policyRule": {
         "if": {
-          "allOf": [
-            {
-              "field": "location",
-              "notIn": "[parameters('allowedLocations')]"
-            }
-          ]
+          "not": {
+            "field": "location",
+            "in": "[parameters('allowedLocations')]"
+          }
         },
         "then": {
-          "effect": "${effect}"
+          "effect": "Deny"
         }
       }
     }
   }
+  

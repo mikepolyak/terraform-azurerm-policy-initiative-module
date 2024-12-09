@@ -8,7 +8,21 @@
         "version": "1.0.0",
         "category": "Storage"
       },
-      "parameters": {},
+      "parameters": {
+        "effect": {
+          "type": "String",
+          "allowedValues": [
+            "Audit",
+            "Deny",
+            "Disabled"
+          ],
+          "defaultValue": "Audit",
+          "metadata": {
+            "description": "The effect of the policy",
+            "displayName": "Effect"
+          }
+        }
+      },
       "policyRule": {
         "if": {
           "allOf": [
@@ -17,14 +31,15 @@
               "equals": "Microsoft.Storage/storageAccounts"
             },
             {
-              "field": "Microsoft.Storage/storageAccounts/enableHttpsTrafficOnly",
+              "field": "Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly",
               "notEquals": "true"
             }
           ]
         },
         "then": {
-          "effect": "${effect}"
+          "effect": "[parameters('effect')]"
         }
       }
     }
   }
+  
