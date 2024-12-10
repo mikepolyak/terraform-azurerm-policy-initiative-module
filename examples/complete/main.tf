@@ -1,19 +1,19 @@
 # File: examples/complete/main.tf
 provider "azurerm" {
   features {}
-  subscription_id = "00000000-0000-0000-0000-000000000000"  # Dev subscription
+  subscription_id = "a9d881ca-f5c0-42cc-9670-946ef3155dfa"  # Dev subscription
 }
 
 provider "azurerm" {
   alias           = "prod"
   features {}
-  subscription_id = "11111111-1111-1111-1111-111111111111"  # Prod subscription
+  subscription_id = "a9d881ca-f5c0-42cc-9670-946ef3155dfa"  # Prod subscription
 }
 
 provider "azurerm" {
   alias           = "management"
   features {}
-  subscription_id = "22222222-2222-2222-2222-222222222222"  # Management subscription
+  subscription_id = "a9d881ca-f5c0-42cc-9670-946ef3155dfa"  # Management subscription
 }
 
 # Deploy policies using the module
@@ -21,10 +21,12 @@ module "policy_initiatives" {
   source = "../../modules/initiative"
   
   providers = {
-    azurerm.target = azurerm  # Default provider for resource group lookups
+    azurerm.target = azurerm
   }
 
+  # Use absolute or normalized relative path
   assignments_config_file = "${path.module}/../../assignments/policy-assignments.json"
+  initiatives_base_path   = abspath("${path.module}/../..") # Convert to absolute path
   module_enabled         = true
 }
 

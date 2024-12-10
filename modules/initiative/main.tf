@@ -1,11 +1,18 @@
 # File: modules/initiative/main.tf
 
-# Local variable validations
 locals {
-  # Parse and validate the assignments configuration
+  # Parse the assignments configuration
   assignments_config = jsondecode(file(var.assignments_config_file))
 
-  # Flatten assignments and targets for easier processing
+  # Read and parse all initiative files, creating a map of initiative definitions
+  initiative_definitions = {
+    for assignment in local.assignments_config.assignments : assignment.name => {
+      content = yamldecode(file("${var.initiatives_base_path}/${assignment.initiative}"))
+      initiative_path = assignment.initiative
+    }
+  }
+
+  # Flatten assignments and targets into a more processable format
   flattened_assignments = flatten([
     for assignment in local.assignments_config.assignments : [
       for target in assignment.targets : {
@@ -13,25 +20,65 @@ locals {
         initiative  = assignment.initiative
         environment = assignment.environment
         scope_type  = target.scope_type
-
-        # Handle different scope types
         subscription_id     = try(target.subscription_id, null)
         resource_group_name = try(target.resource_group_name, null)
         management_group_id = try(target.management_group_id, null)
-
         exemptions = try(assignment.exemptions, [])
       }
     ]
   ])
 
-  # Group assignments by scope type
+  # Organize assignments by their scope type for easier processing
   assignments_by_scope = {
     rg  = [for a in local.flattened_assignments : a if a.scope_type == "rg"]
     sub = [for a in local.flattened_assignments : a if a.scope_type == "sub"]
     mg  = [for a in local.flattened_assignments : a if a.scope_type == "mg"]
   }
 
-  # Validation checks
+  # Create unique scope identifiers for assignments
+  scope_identifiers = {
+    for assignment in local.flattened_assignments : assignment.name => (
+      assignment.scope_type == "mg" ? "mg-${assignment.management_group_id}" :
+      assignment.scope_type == "sub" ? "sub-${assignment.subscription_id}" :
+      assignment.scope_type == "rg" ? "rg-${assignment.subscription_id}-${assignment.resource_group_name}" :
+      "unknown"
+    )
+  }
+
+  # Process policy definitions into a structured list
+  policy_definitions_list = flatten([
+    for assignment in local.assignments_config.assignments : [
+      for policy_key, policy in local.initiative_definitions[assignment.name].content.policies : {
+        key = "${assignment.name}-${policy_key}"
+        value = {
+          initiative   = assignment.initiative
+          policy_key   = policy_key
+          policy      = policy
+          file_content = policy.type == "Custom" ? (
+            jsondecode(file(replace(
+              "${var.initiatives_base_path}/${dirname(assignment.initiative)}/${policy.file}",
+              "/[^/]+/\\.\\./", "/"
+            )))
+          ) : null
+          assignment  = assignment
+        }
+      }
+      if policy.type == "Custom"
+    ]
+  ])
+
+  # Convert the policy definitions list into a map for resource creation
+  policy_definitions = {
+    for def in local.policy_definitions_list : def.key => {
+      initiative   = def.value.initiative
+      policy_key   = def.value.policy_key
+      policy       = def.value.policy
+      file_content = try(def.value.file_content, null)
+      assignment   = def.value.assignment
+    } if var.module_enabled
+  }
+
+  # Validation checks to ensure data integrity
   validate_scope_types = alltrue([
     for assignment in local.flattened_assignments :
     contains(["rg", "sub", "mg"], assignment.scope_type)
@@ -43,10 +90,16 @@ locals {
   ])
 }
 
-# Generate unique identifiers for various resources to ensure consistent naming
+# Generate unique identifiers for various resources
 resource "random_uuid" "policy" {
   for_each = var.module_enabled ? {
-    for assignment in local.assignments_config.assignments : assignment.name => assignment
+    for assignment in local.assignments_config.assignments : assignment.name => assignment.initiative
+  } : {}
+}
+
+resource "random_uuid" "assignment" {
+  for_each = var.module_enabled ? {
+    for name, scope_id in local.scope_identifiers : "${name}-${scope_id}" => scope_id
   } : {}
 }
 
@@ -54,61 +107,36 @@ resource "random_uuid" "exemptions" {
   count = var.module_enabled ? 1 : 0
 }
 
-resource "random_uuid" "assignment" {
-  for_each = var.module_enabled ? {
-    for assignment in local.flattened_assignments :
-    "${assignment.name}-${coalesce(
-      assignment.subscription_id,
-      assignment.management_group_id,
-      "${assignment.subscription_id}-${assignment.resource_group_name}"
-    )}" => assignment
-  } : {}
-}
-
-# Resource group data source to validate existence and fetch properties
+# Resource group data source to validate existence
 data "azurerm_resource_group" "targets" {
   for_each = var.module_enabled ? {
     for assignment in local.assignments_by_scope.rg :
     "${assignment.name}-${assignment.resource_group_name}" => assignment
-    if can(assignment.subscription_id) # Only try to fetch if we have a subscription ID
+    if can(assignment.subscription_id)
   } : {}
 
-  provider = azurerm.target # Direct reference to the target provider
+  provider = azurerm.target
   name     = each.value.resource_group_name
 }
 
-# Create custom policy definitions based on the provided policy files
+# Create custom policy definitions
 resource "azurerm_policy_definition" "custom" {
-  for_each = var.module_enabled ? {
-    for pair in flatten([
-      for assignment in local.assignments_config.assignments :
-      [
-        for policy_key, policy in yamldecode(file(assignment.initiative)).policies :
-        {
-          key = "${assignment.name}-${policy_key}"
-          value = {
-            initiative   = assignment.initiative
-            policy_key   = policy_key
-            policy       = policy
-            file_content = jsondecode(file(format("%s/%s", dirname(assignment.initiative), policy.file)))
-            assignment   = assignment # Include the full assignment object
-          }
-        }
-        if policy.type == "Custom"
-      ]
-    ]) : pair.key => pair.value
-  } : {}
+  for_each = local.policy_definitions
 
-  name         = random_uuid.policy[each.value.initiative].result
+  name         = random_uuid.policy[each.value.assignment.name].result
   policy_type  = "Custom"
   mode         = try(each.value.file_content.properties.mode, "All")
   display_name = try(each.value.file_content.properties.displayName, each.value.policy_key)
   description  = try(each.value.file_content.properties.description, "Custom policy definition")
 
-  metadata   = jsonencode(try(each.value.file_content.properties.metadata, {}))
-  parameters = jsonencode(try(each.value.file_content.properties.parameters, {}))
+  metadata    = jsonencode(try(each.value.file_content.properties.metadata, {}))
+  parameters  = jsonencode(try(each.value.file_content.properties.parameters, {}))
+  
   policy_rule = templatefile(
-    format("%s/%s", dirname(each.value.initiative), each.value.policy.file),
+    replace(
+      "${var.initiatives_base_path}/${dirname(each.value.initiative)}/${each.value.policy.file}",
+      "/[^/]+/\\.\\./", "/"
+    ),
     {
       effect = try(
         each.value.policy[each.value.assignment.environment].effect,
@@ -118,14 +146,12 @@ resource "azurerm_policy_definition" "custom" {
   )
 }
 
-# Reference existing built-in policy definitions
+# Reference built-in policy definitions
 data "azurerm_policy_definition" "builtin" {
   for_each = var.module_enabled ? {
     for pair in flatten([
-      for assignment in local.assignments_config.assignments :
-      [
-        for policy_key, policy in yamldecode(file(assignment.initiative)).policies :
-        {
+      for assignment in local.assignments_config.assignments : [
+        for policy_key, policy in local.initiative_definitions[assignment.name].content.policies : {
           key   = "${assignment.name}-${policy_key}"
           value = policy
         }
@@ -138,7 +164,7 @@ data "azurerm_policy_definition" "builtin" {
 }
 
 
-# Combine all policy definitions (both custom and built-in) for easier reference
+# Combine all policy definitions for easier reference
 locals {
   all_policies = merge(
     {
@@ -156,7 +182,7 @@ locals {
   )
 }
 
-# Create policy initiatives (policy sets) that group related policies
+# Create policy initiatives (policy sets)
 resource "azurerm_policy_set_definition" "this" {
   for_each = var.module_enabled ? {
     for assignment in local.assignments_config.assignments :
@@ -168,11 +194,11 @@ resource "azurerm_policy_set_definition" "this" {
 
   name         = random_uuid.policy[each.key].result
   policy_type  = "Custom"
-  display_name = yamldecode(file(each.value.initiative)).display_name
-  description  = yamldecode(file(each.value.initiative)).description
+  display_name = local.initiative_definitions[each.key].content.display_name
+  description  = local.initiative_definitions[each.key].content.description
 
   dynamic "policy_definition_reference" {
-    for_each = yamldecode(file(each.value.initiative)).policies
+    for_each = local.initiative_definitions[each.key].content.policies
 
     content {
       policy_definition_id = local.all_policies["${each.key}-${policy_definition_reference.key}"].id
@@ -187,7 +213,7 @@ resource "azurerm_policy_set_definition" "this" {
   }
 }
 
-# Assign policies at resource group scope
+# Assign policies at various scopes
 resource "azurerm_resource_group_policy_assignment" "this" {
   for_each = var.module_enabled ? {
     for assignment in local.assignments_by_scope.rg :
@@ -199,7 +225,6 @@ resource "azurerm_resource_group_policy_assignment" "this" {
   policy_definition_id = azurerm_policy_set_definition.this[each.value.name].id
 }
 
-# Assign policies at subscription scope
 resource "azurerm_subscription_policy_assignment" "this" {
   for_each = var.module_enabled ? {
     for assignment in local.assignments_by_scope.sub :
@@ -211,7 +236,6 @@ resource "azurerm_subscription_policy_assignment" "this" {
   policy_definition_id = azurerm_policy_set_definition.this[each.value.name].id
 }
 
-# Assign policies at management group scope
 resource "azurerm_management_group_policy_assignment" "this" {
   for_each = var.module_enabled ? {
     for assignment in local.assignments_by_scope.mg :
@@ -223,7 +247,7 @@ resource "azurerm_management_group_policy_assignment" "this" {
   policy_definition_id = azurerm_policy_set_definition.this[each.value.name].id
 }
 
-# Consolidate all assignments for easier reference in exemptions
+# Consolidate all assignments for easier reference
 locals {
   assignments = {
     rg  = azurerm_resource_group_policy_assignment.this
@@ -232,7 +256,7 @@ locals {
   }
 }
 
-# Create policy exemptions at resource group scope
+# Create policy exemptions at various scopes
 resource "azurerm_resource_group_policy_exemption" "this" {
   for_each = var.module_enabled ? {
     for i in flatten([
@@ -257,7 +281,6 @@ resource "azurerm_resource_group_policy_exemption" "this" {
   description          = jsonencode({ "risk_id" : each.value.risk_id })
 }
 
-# Create policy exemptions at subscription scope
 resource "azurerm_subscription_policy_exemption" "this" {
   for_each = var.module_enabled ? {
     for i in flatten([
@@ -282,7 +305,6 @@ resource "azurerm_subscription_policy_exemption" "this" {
   description          = jsonencode({ "risk_id" : each.value.risk_id })
 }
 
-# Create policy exemptions at management group scope
 resource "azurerm_management_group_policy_exemption" "this" {
   for_each = var.module_enabled ? {
     for i in flatten([

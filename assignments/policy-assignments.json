@@ -7,7 +7,7 @@
       "targets": [
         {
           "scope_type": "sub",
-          "subscription_id": "00000000-0000-0000-0000-000000000000"
+          "subscription_id": "a9d881ca-f5c0-42cc-9670-946ef3155dfa"
         }
       ]
     },
@@ -29,7 +29,7 @@
       "targets": [
         {
           "scope_type": "rg",
-          "subscription_id": "00000000-0000-0000-0000-000000000000",
+          "subscription_id": "a9d881ca-f5c0-42cc-9670-946ef3155dfa",
           "resource_group_name": "rg-application-dev"
         }
       ],
